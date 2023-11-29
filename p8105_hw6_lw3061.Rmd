@@ -86,3 +86,59 @@ sum_weather = weather_bstrap |>
 After 5000 bootstraps, the 95% CI for the r-squared values is (`r sum_weather$rsq_low`, `r sum_weather$rsq_high`) and the CI for the log(beta1 * beta2) values is (`r sum_weather$betas_low`, `r sum_weather$betas_high`).
 
 ## Problem 3
+Import and tidy birthweight data:
+```{r}
+bw = read_csv("birthweight.csv") |>
+  mutate(babysex= as.factor(babysex),
+         frace = as.factor(frace),
+         malform = as.factor(malform),
+         mrace = as.factor(mrace))
+```
+
+My proposed regression model for birthweight will use mother's weight at delivery `delwt`, mother's age at delivery `momage`, and mother's age at menarche `menarche` as predictors, with no interaction terms. I am curious about these variables because they are related to reproductive cycles of the mother so they would likely affect the development of the fetus and thus the birthweight of the baby.
+
+```{r}
+fit = lm(bwt ~ delwt + momage + menarche, data=bw)
+fit |> broom::tidy() |> select(term, estimate, p.value) |> knitr::kable(digits=3)
+```
+
+At a quick glance the estimates have low p-values except for the estimate for `menarche`. Now I will add residuals and fitted values...
+
+```{r}
+bw |>
+  modelr::add_residuals(fit) |>
+  modelr::add_predictions(fit) |>
+  ggplot(aes(x=resid, y=pred)) + geom_point(alpha=0.5, size=0.5)
+```
+
+The plot of the fitted values and residuals is not looking very good; there are some outliers and some clustering of values, so maybe the linear model isn't the best. 
+
+Now I'll compare this to 2 other models using the cross-validation method:
+```{r}
+cv_df = crossv_mc(bw, 10)
+
+cv_df = cv_df |>
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble)) 
+
+cv_df = cv_df |>
+  mutate(
+    my_mod = map(train, \(df) lm(bwt ~ delwt + momage + menarche, data=df)),
+    main_mod = map(train, \(df) lm(bwt ~ blength + gaweeks, data=df)),
+    interact_mod = map(train, \(df) lm(bwt ~ bhead * blength * babysex, data=df))
+    ) |>
+  mutate(
+    rmse_my = map2_dbl(my_mod, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_main = map2_dbl(main_mod, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_interact = map2_dbl(interact_mod, test, \(mod, df) rmse(model = mod, data = df))
+    )
+
+cv_df |> select(starts_with("rmse")) |>
+  pivot_longer(
+    everything(), names_to="model", values_to="rmse", names_prefix="rmse_"
+  ) |>
+  ggplot(aes(x=model, y=rmse)) + geom_violin()
+```
+
+Based on looking at the root mean squared error, the model with the interactions between `bhead`, `blength`, and `babysex` seems to be the best fit as it has the smallest rmse. In contrast, the rmse for my model is really much higher than the other two models, so it looks like it's not optimal. 
+
