@@ -22,6 +22,73 @@ scale_fill_discrete = scale_fill_viridis_d
 ```
 
 ## Problem 1
+Import and tidy homicides data as before:
+```{r}
+homicide = 
+  read_csv("homicide-data.csv") |> 
+  janitor::clean_names() |>
+  separate(reported_date, into=c("year","month","day"), sep=c(4,6)) |>
+  mutate(city_state = str_c(city, ", ", state)) |>
+  filter(!city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"))  |> 
+  mutate(status = case_when(
+    disposition %in% c("Closed without arrest","Open/No arrest") ~ "unsolved",
+    disposition == "Closed by arrest" ~ "solved"
+  )) |>
+  filter(victim_race %in% c("White", "Black")) |>
+  mutate(victim_age = as.numeric(victim_age),
+         resolved = as.numeric(disposition == "Closed by arrest"),
+         victim_race = fct_relevel(victim_race, "White"))
+```
+
+Now to run a logistic regression on homicides vs age, sex, and race in Baltimore, MD.
+
+```{r}
+md_glm = homicide |> filter(city_state =="Baltimore, MD") |>
+  glm(resolved ~ victim_age + victim_sex + victim_race, data=_, family=binomial())
+
+md_or = md_glm |> broom::tidy() |>
+  mutate(
+    OR = exp(estimate),
+    OR_low = exp(estimate - 1.96*std.error),
+    OR_high = exp(estimate + 1.96*std.error)) |>
+  select(term,OR, OR_low, OR_high)
+
+md_or_sex = md_or |> filter(term=="victim_sexMale") 
+
+md_or_sex|> knitr::kable()
+```
+
+The adjusted OR for solving homicides comparing male victims to female victims with others variables fixed is `r round(md_or_sex$OR, digits=2)` with 95% confidence interval of (`r round(md_or_sex$OR_low, digits=2)`, `r round(md_or_sex$OR_high, digits=2)`). Male victims are `r 1 - round(md_or_sex$OR, digits=2)` less likely to have their homicide resolved than female victims adjusted for age and race.
+
+Here I run the same regression with `glm` on all the cities in the dataset:
+```{r}
+all_cities = homicide |> nest(.by=city_state) |>
+  mutate(
+  models = map(data, 
+               \(df) glm(resolved ~ victim_age + victim_sex + victim_race,
+                         family=binomial(), data=df)),
+  models = map(models, broom::tidy)
+) |>
+  select(-data) |>
+  unnest(cols=models) |>
+  mutate(
+    OR = exp(estimate),
+    OR_low = exp(estimate - 1.96*std.error),
+    OR_high = exp(estimate + 1.96*std.error)) |>
+  filter(term=="victim_sexMale") |>
+  select(city_state, OR, OR_low, OR_high)
+```
+
+This is the plot of ORs and 95% CIs organized from least to greatest OR.
+```{r}
+all_cities |> mutate(city_state=fct_reorder(city_state, OR)) |>
+  ggplot(aes(x=city_state, y=OR)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=OR_low, ymax=OR_high)) +
+   theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+The smallest OR is in NYC with a value of `r round(filter(all_cities, city_state=="New York, NY")$OR, digits=2)`, suggesting that male victims are `r 1-round(filter(all_cities, city_state=="New York, NY")$OR, digits=2)` less likely than females to have their homicide resolved after adjusting for age and race. The highest OR is Albuquerque with a value of `r round(filter(all_cities, city_state=="Albuquerque, NM")$OR, digits=2)`. Since this is above 1, males are `r 1-round(filter(all_cities, city_state=="Albuquerque, NM")$OR, digits=2)` times more likely to have their homicides resolved. The CIs for the higher ORs (around 1- above 1) are much wider than the ones with ORs below 1.
 
 ## Problem 2
 First, download data:
