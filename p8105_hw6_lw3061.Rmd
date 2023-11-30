@@ -60,7 +60,7 @@ md_or_sex|> knitr::kable()
 
 The adjusted OR for solving homicides comparing male victims to female victims with others variables fixed is `r round(md_or_sex$OR, digits=2)` with 95% confidence interval of (`r round(md_or_sex$OR_low, digits=2)`, `r round(md_or_sex$OR_high, digits=2)`). Male victims are `r 1 - round(md_or_sex$OR, digits=2)` less likely to have their homicide resolved than female victims adjusted for age and race.
 
-Here I run the same regression with `glm` on all the cities in the dataset:
+Here I run the same regression using `glm` on all the cities in the dataset:
 ```{r}
 all_cities = homicide |> nest(.by=city_state) |>
   mutate(
@@ -106,7 +106,7 @@ weather_df =
   select(name, id, everything())
 ```
 
-The simple linear regression will have `tmax` as the response variable with `tmin` and `prcp` as predictors. Run 5000 bootstraps and estimate r-squared and log(beta1 * beta2), then plot the distributions.
+The simple linear regression will have `tmax` as the response variable with `tmin` and `prcp` as predictors. Run 5000 bootstraps and estimate r-squared and log(beta1 x beta2) - which is log(beta1) x log(beta2), then plot the distributions.
 
 ```{r}
 weather_bstrap = weather_df |>
@@ -119,7 +119,7 @@ weather_bstrap = weather_df |>
   unnest(results) |> 
   filter(term %in% c("tmin", "prcp")) |>
   group_by(.id) |> 
-  mutate(beta1x2 = prod(estimate)) |>
+  mutate(beta1x2 = sum(estimate)) |>
   select(beta1x2, rsq) |> 
   unnest(rsq) |> 
   janitor::clean_names() |>
@@ -130,7 +130,7 @@ weather_bstrap = weather_df |>
 weather_bstrap |> ggplot(aes(x=beta1x2)) + geom_density()
 ```
 
-The distribution of the log(beta1 * beta2) estimates seems to be centered around 0 with majority of values between -0.01 and 0.01.
+The distribution of the log(beta1 * beta2) estimates seems to be centered around 1.01 with majority of values between 0.95 and 1.05.
 
 ```{r}
 weather_bstrap |> ggplot(aes(x=r_squared)) + geom_density()
